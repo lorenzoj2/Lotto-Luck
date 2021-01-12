@@ -4,12 +4,16 @@ import urllib.request
 import pandas as pd
 import mysql.connector
 import os
+import logging
+import time
 
 
 def get_ticket_urls():
     """
     Returns a list of URLs for every available scratch off ticket
     """
+
+    logging.info("Collecting ticket URLs...")
 
     # base url to all scratch off games
     url = "https://www.ohiolottery.com/Games/ScratchOffs"
@@ -77,6 +81,8 @@ def get_ticket(url):
     ticket_pic = page.find(class_='igTicketImg')['style']
     ticket_pic = "https://www.ohiolottery.com" + ticket_pic[ticket_pic.find("(") + 1:ticket_pic.find(")")]
 
+    # add ticket information to log
+    logging.info([ticket_name, ticket_number, ticket_price, ticket_odds, ticket_prize, ticket_pic, now])
     return [ticket_name, ticket_number, ticket_price, ticket_odds, ticket_prize, ticket_pic, now]
 
 
@@ -89,6 +95,7 @@ def get_tickets_df():
 
     for url in get_ticket_urls():
         data.append(get_ticket(url))
+        time.sleep(5)
 
     return pd.DataFrame(data, columns=['Name', 'Number', 'Price', 'Odds', 'Prize', 'Pic', 'Time'])
 
@@ -97,6 +104,8 @@ def update_db(df):
     """
     Inserts new records into the ticket table
     """
+
+    logging.info("Inserting new records into database...")
 
     config = {
         'user': 'root',
@@ -118,13 +127,17 @@ def update_db(df):
             cursor.execute(query)
             db.commit()
         except mysql.connector.Error as err:
-            print(err)
-            print(query)
+            logging.error(err, query)
 
 
 def main():
+    logging.basicConfig(filename="lotto.log", level=logging.INFO, format='%(asctime)s : %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    logging.info('Started Scraping...')
+
     df = get_tickets_df()
     update_db(df)
+
+    logging.info('Finished.')
 
 
 if __name__ == '__main__':
