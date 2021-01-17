@@ -95,8 +95,11 @@ def get_tickets_df():
     data = []
 
     for url in get_ticket_urls():
-        data.append(get_ticket(url))
-        time.sleep(5)
+        try:
+            data.append(get_ticket(url))
+            time.sleep(5)
+        except urllib.error.HTTPERROR as err:
+            logging.error(err);
 
     return pd.DataFrame(data, columns=['Name', 'Number', 'Price', 'Odds', 'Prize', 'Pic', 'Time'])
 
