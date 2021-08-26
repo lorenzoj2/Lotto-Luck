@@ -20,7 +20,9 @@ def get_ticket_urls():
     url = "https://www.ohiolottery.com/Games/ScratchOffs"
 
     # download url as html
-    content = urllib.request.urlopen(url).read()
+    request =  urllib.request.urlopen(url)
+    time.sleep(1)
+    content = request.read()
 
     # html format that is able to be parsed
     page = BeautifulSoup(content, 'html.parser')
@@ -99,7 +101,7 @@ def get_tickets_df():
             data.append(get_ticket(url))
             time.sleep(5)
         except urllib.error.HTTPERROR as err:
-            logging.error(err);
+            logging.error(err)
 
     return pd.DataFrame(data, columns=['Name', 'Number', 'Price', 'Odds', 'Prize', 'Pic', 'Time'])
 
@@ -128,7 +130,7 @@ def update_db(df):
 
     for index, row in df.iterrows():
         query = f"INSERT INTO lottoluck.ticket (name, number, price, odds, prize, pic, time) " \
-                f"VALUES (\"{row['Name']}\", {row['Number']}, {row['Price']}, \"{row['Odds']}\", \"{(row['Prize'])}\", \"{row['Pic']}\", \"{row['Time']}\");"
+                f"VALUES (\"{row['Name']}\", {row['Number']}, {row['Price']}, \"{row['Odds']}\", \'{(row['Prize'])}\', \"{row['Pic']}\", \"{row['Time']}\");"
 
         try:
             cursor.execute(query)
@@ -142,6 +144,8 @@ def main():
     logging.info('Started Scraping...')
 
     df = get_tickets_df()
+    # df.to_csv("lottery_data.csv")
+    # df = pd.read_csv("lottery_data.csv")
     update_db(df)
 
     logging.info('Finished.')
