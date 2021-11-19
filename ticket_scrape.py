@@ -2,16 +2,19 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 import urllib.request
 import pandas as pd
-import mysql.connector
-import os
 import logging
-import time
 import json
+import os
+from sqlalchemy import create_engine
+from sqlalchemy import exc
 
 
 def get_ticket_urls():
     """
-    Returns a list of URLs for every available scratch off ticket
+    Gets the URLs of every ticket.
+
+    Returns:
+        A list of URLs for every available ticket.
     """
 
     logging.info("Collecting ticket URLs...")
@@ -20,8 +23,7 @@ def get_ticket_urls():
     url = "https://www.ohiolottery.com/Games/ScratchOffs"
 
     # download url as html
-    request =  urllib.request.urlopen(url)
-    time.sleep(1)
+    request = urllib.request.urlopen(url)
     content = request.read()
 
     # html format that is able to be parsed
@@ -38,7 +40,15 @@ def get_ticket_urls():
 
 def get_ticket(url):
     """
-    Returns the available data for a scratch off given the URL
+
+    Gets the available data for a ticket given the URL.
+
+    Args:
+        url: The url of the ticket.
+
+    Returns:
+         A list containing the ticket's available data.
+
     """
 
     # download url as html
@@ -89,54 +99,68 @@ def get_ticket(url):
     return [ticket_name, ticket_number, ticket_price, ticket_odds, ticket_prize, ticket_pic, now]
 
 
-def get_tickets_df():
+def get_tickets_df(num_tickets=None):
     """
-    Returns a Dataframe of every ticket's information
+    Returns a Dataframe of every ticket's information.
+
+    Args:
+        num_tickets: Number of tickets to add to the DataFrame.
+
+    Returns:
+        A DataFrame containing every tickets information.
+
     """
 
     data = []
+    ticket_urls = get_ticket_urls()
 
-    for url in get_ticket_urls():
+    for idx, url in enumerate(ticket_urls):
+        if num_tickets and idx >= num_tickets:
+            break;
+
         try:
             data.append(get_ticket(url))
-            time.sleep(5)
         except urllib.error.HTTPERROR as err:
             logging.error(err)
 
-    return pd.DataFrame(data, columns=['Name', 'Number', 'Price', 'Odds', 'Prize', 'Pic', 'Time'])
+    return pd.DataFrame(data, columns=['name', 'ticket_number', 'price', 'odds', 'prize', 'pic', 'time'])
 
 
-def update_db(df):
+def get_engine():
+    user = 'user'
+    password = os.environ['LOTTO_KEY']
+    host = 'localhost'
+    database = 'lottoluck'
+
+    return create_engine(f'mysql+pymysql://{user}:{password}@{host}/{database}', pool_recycle=3600)
+
+
+def insert_df(df, table_name):
     """
-    Inserts new records into the ticket table
+
+    Connects to and inserts a DataFrame into the database.
+
+    Args:
+        df: The DataFrame to insert.
+        table_name: The table to insert into.
+
     """
-
-    logging.info("Inserting new records into database...")
-
-    config = {
-        'user': 'user',
-        'password': os.environ['LOTTO_KEY'],
-        'host': 'localhost',
-        'database': 'lottoluck',
-        'raise_on_warnings': True,
-    }
+    sql_engine = get_engine()
+    db_connection = sql_engine.connect()
 
     try:
-        db = mysql.connector.connect(**config)
-    except KeyError as err:
-        logging.error(err)
-
-    cursor = db.cursor()
-
-    for index, row in df.iterrows():
-        query = f"INSERT INTO lottoluck.ticket (name, number, price, odds, prize, pic, time) " \
-                f"VALUES (\"{row['Name']}\", {row['Number']}, {row['Price']}, \"{row['Odds']}\", \'{(row['Prize'])}\', \"{row['Pic']}\", \"{row['Time']}\");"
-
-        try:
-            cursor.execute(query)
-            db.commit()
-        except mysql.connector.Error as err:
-            logging.error(err, query)
+        df.to_sql(table_name, db_connection, if_exists='append', index=False)
+    except exc.IntegrityError:
+        logging.error("Integrity Error. Field may already exist.")
+        pass
+    except ValueError as vx:
+        logging.error(vx)
+    except Exception as ex:
+        logging.exception(ex)
+    else:
+        logging.info(f"Table {table_name} successfully updated.")
+    finally:
+        db_connection.close()
 
 
 def main():
@@ -144,12 +168,19 @@ def main():
     logging.info('Started Scraping...')
 
     df = get_tickets_df()
-    # df.to_csv("lottery_data.csv")
-    # df = pd.read_csv("lottery_data.csv")
-    update_db(df)
+
+    ticket_df = df[['ticket_number', 'name', 'price', 'odds', 'pic']].copy()
+    prize_df = df[['ticket_number', 'prize', 'time']].copy()
+
+    # Insert data into ticket table
+    insert_df(ticket_df, 'new_ticket')
+
+    # Insert data into the prize table
+    insert_df(prize_df, 'prize')
 
     logging.info('Finished.')
 
 
 if __name__ == '__main__':
     main()
+
