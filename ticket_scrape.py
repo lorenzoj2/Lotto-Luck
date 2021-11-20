@@ -173,7 +173,7 @@ def main():
     prize_df = df[['ticket_number', 'prize', 'time']].copy()
 
     # Insert data into ticket table
-    insert_df(ticket_df, 'new_ticket')
+    insert_df(ticket_df, 'ticket')
 
     # Insert data into the prize table
     insert_df(prize_df, 'prize')
