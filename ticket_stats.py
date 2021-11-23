@@ -127,10 +127,20 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
             amt = amt.replace('$', '')
             amt = pd.to_numeric(amt)
         except ValueError:
-            if 'MEGAPLIER' in amt or 'ENTRY' in amt:
+            amt = amt.upper()
+
+            if '&' in amt:
+                # TPD ENTRY & 5500
+                amt = amt.split('&')
+                amt = amt[1]
+                amt = pd.to_numeric(amt)
+
+            elif 'TPD' in amt or 'MEGAPLIER' in amt or 'ENTRY' in amt:
+                # ex. 250K/YR FOR LIFE/TPD, top prize drawing, not counted as a prize
                 amt = 0
 
             elif 'LIFE' in amt:
+                # ex. 250K/YR FOR LIFE
                 amt = amt.split()
                 amt = amt[0].split('/')[0].strip("K")
                 amt = pd.to_numeric(amt)
@@ -138,18 +148,17 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
                 # 20 years worth of prizes
                 amt = amt * 1000 * 20
 
-            elif '&' in amt:
-                amt = amt.split('&')
-                amt = amt[1]
-                amt = pd.to_numeric(amt)
-
             elif 'FOR' in amt:
+                # ex. 2500/MO FOR 10YRS
                 amt = (amt.split('FOR'))
 
+                # 10YRS
                 time = amt[1].split()[0]
                 time = pd.to_numeric(time)
 
+                # 2500
                 val = amt[0].split('/')[0]
+                # MO
                 period = amt[0].split('/')[1]
 
                 if 'K' in val:
@@ -159,6 +168,7 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
                 else:
                     val = pd.to_numeric(val)
 
+                # Change val to represent the amount for one year
                 if 'MO' in period:
                     val = pd.to_numeric(val)
                     val *= 12
@@ -177,6 +187,7 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
     ev['prize'] = new_prize_amounts
     ev['rem'] = prizes_remaining
     ev['x'] = ev['prize'] - price
+    ev['x'] = ev['x'].clip(0)  # set all negative values to 0
     ev['p(x)'] = ev['rem'] / ev['rem'].sum()
     ev['x * p(x)'] = ev['x'] * ev['p(x)']
 
