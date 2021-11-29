@@ -4,9 +4,8 @@ import urllib.request
 import pandas as pd
 import logging
 import json
+import mysql.connector
 import os
-from sqlalchemy import create_engine
-from sqlalchemy import exc
 
 
 def get_ticket_urls():
@@ -17,10 +16,10 @@ def get_ticket_urls():
         A list of URLs for every available ticket.
     """
 
-    logging.info("Collecting ticket URLs...")
+    logging.info('Collecting ticket URLs...')
 
     # base url to all scratch off games
-    url = "https://www.ohiolottery.com/Games/ScratchOffs"
+    url = 'https://www.ohiolottery.com/Games/ScratchOffs'
 
     # download url as html
     request = urllib.request.urlopen(url)
@@ -33,14 +32,13 @@ def get_ticket_urls():
     ticket_urls = []
 
     for ticket in page.find_all(class_='igLandListItem'):
-        ticket_urls.append("https://www.ohiolottery.com/" + ticket.find('a')['href'])
+        ticket_urls.append('https://www.ohiolottery.com/' + ticket.find('a')['href'])
 
     return ticket_urls
 
 
 def get_ticket(url):
     """
-
     Gets the available data for a ticket given the URL.
 
     Args:
@@ -66,14 +64,14 @@ def get_ticket(url):
     ticket_number = page.find('span', {'class': 'number'}).text.strip('#')
 
     ticket_price = url.split('/')[6].strip('$')
-    if ticket_price == "20DollarGames":
-        ticket_price = "20-Games"
-    elif ticket_price == "10DollarGames":
-        ticket_price = "10-Games"
+    if ticket_price == '20DollarGames':
+        ticket_price = '20-Games'
+    elif ticket_price == '10DollarGames':
+        ticket_price = '10-Games'
     ticket_price = ticket_price.split('-')[0]
 
     try:
-        ticket_odds = page.find(class_='odds').text.strip("Overall odds of winning: ").split()[2]
+        ticket_odds = page.find(class_='odds').text.strip('Overall odds of winning: ').split()[2]
         ticket_odds = pd.to_numeric(ticket_odds)
     except IndexError:
         ticket_odds = 0.0   # no info available
@@ -92,7 +90,7 @@ def get_ticket(url):
 
     # url to ticket's image
     ticket_pic = page.find(class_='igTicketImg')['style']
-    ticket_pic = "https://www.ohiolottery.com" + ticket_pic[ticket_pic.find("(") + 1:ticket_pic.find(")")]
+    ticket_pic = 'https://www.ohiolottery.com' + ticket_pic[ticket_pic.find('(') + 1:ticket_pic.find(')')]
 
     # add ticket information to log
     logging.info([ticket_name, ticket_number, ticket_price])
@@ -116,7 +114,7 @@ def get_tickets_df(num_tickets=None):
 
     for idx, url in enumerate(ticket_urls):
         if num_tickets and idx >= num_tickets:
-            break;
+            break
 
         try:
             data.append(get_ticket(url))
@@ -126,45 +124,53 @@ def get_tickets_df(num_tickets=None):
     return pd.DataFrame(data, columns=['name', 'ticket_number', 'price', 'odds', 'prize', 'pic', 'time'])
 
 
-def get_engine():
-    user = 'user'
-    password = os.environ['LOTTO_KEY']
-    host = 'localhost'
-    database = 'lottoluck'
+def get_conn():
+    conn = mysql.connector.connect(
+        host='localhost',
+        user='user',
+        password=os.environ['LOTTO_KEY'],
+        database='lottoluck',
+    )
 
-    return create_engine(f'mysql+pymysql://{user}:{password}@{host}/{database}', pool_recycle=3600)
+    return conn
 
 
-def insert_df(df, table_name):
+def insert_df(df, table_name, ignore=False):
     """
-
     Connects to and inserts a DataFrame into the database.
 
     Args:
         df: The DataFrame to insert.
         table_name: The table to insert into.
+        ignore: Whether to ignore existing records in table when inserting.
 
     """
-    sql_engine = get_engine()
-    db_connection = sql_engine.connect()
 
-    try:
-        df.to_sql(table_name, db_connection, if_exists='append', index=False)
-    except exc.IntegrityError:
-        logging.error("Integrity Error. Field may already exist.")
-        pass
-    except ValueError as vx:
-        logging.error(vx)
-    except Exception as ex:
-        logging.exception(ex)
-    else:
-        logging.info(f"Table {table_name} successfully updated.")
-    finally:
-        db_connection.close()
+    conn = get_conn()
+    cursor = conn.cursor(prepared=True)
+    rows_affected = 0
+
+    query = f'INSERT {"IGNORE " if ignore else ""}INTO {table_name}({", ".join(df.columns)}) VALUES({", ".join(["? " for _ in df.columns])})'
+
+    for x in df.to_dict(orient='split')['data']:
+        try:
+            # Insert new data
+            cursor.execute(query, x)
+            rows_affected += cursor.rowcount
+        except mysql.connector.Error as err:
+            logging.error(err)
+
+    # Commit data to database
+    conn.commit()
+
+    logging.info(f'{table_name} : {rows_affected} rows successfully updated.')
+
+    cursor.close()
+    conn.close()
 
 
 def main():
-    logging.basicConfig(filename="lotto.log", level=logging.INFO, format='%(asctime)s : %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    logging.basicConfig(filename='lotto.log', level=logging.INFO, format='%(asctime)s : %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
     logging.info('Started Scraping...')
 
     df = get_tickets_df()
@@ -173,7 +179,7 @@ def main():
     prize_df = df[['ticket_number', 'prize', 'time']].copy()
 
     # Insert data into ticket table
-    insert_df(ticket_df, 'ticket')
+    insert_df(ticket_df, 'ticket', ignore=True)
 
     # Insert data into the prize table
     insert_df(prize_df, 'prize')
