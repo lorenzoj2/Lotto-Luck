@@ -198,7 +198,7 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
         odds = 4
 
     # The average return from each ticket
-    ev_score = (expected / odds) - price
+    ev_score = ((expected / odds) - price) / price
 
     return ev_score
 
