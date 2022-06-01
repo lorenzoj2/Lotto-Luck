@@ -176,7 +176,7 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
                 amt = val * time
 
             else:
-                logging.info("Value Error while transforming prize amounts.")
+                logging.info(f'Value Error while transforming prize amounts. {amt}')
                 amt = 0
 
         finally:
