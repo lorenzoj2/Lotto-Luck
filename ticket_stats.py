@@ -130,9 +130,9 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
             amt = amt.upper()
 
             if '&' in amt:
-                # TPD ENTRY & 5500
-                amt = amt.split('&')
-                amt = amt[1]
+                # TPD ENTRY & 5500 Tax Free, TPD ENTRY & 5500
+                amt = amt.split(' ')
+                amt = amt[3]
                 amt = pd.to_numeric(amt)
 
             elif 'TPD' in amt or 'MEGAPLIER' in amt or 'ENTRY' in amt:
