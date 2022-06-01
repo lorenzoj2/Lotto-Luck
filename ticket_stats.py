@@ -130,12 +130,12 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
             amt = amt.upper()
 
             if '&' in amt:
-                # TPD ENTRY & 5500 Tax Free, TPD ENTRY & 5500
+                # ex. TPD ENTRY & 5500 Tax Free, TPD ENTRY & 5500
                 amt = amt.split(' ')
                 amt = amt[3]
                 amt = pd.to_numeric(amt)
 
-            elif 'TPD' in amt or 'MEGAPLIER' in amt or 'ENTRY' in amt:
+            elif 'TPD' in amt or 'MEGAPLIER' in amt or 'ENTRY' in amt or 'DRAWING' in amt:
                 # ex. 250K/YR FOR LIFE/TPD, top prize drawing, not counted as a prize
                 amt = 0
 
@@ -174,6 +174,12 @@ def get_ev_score(prize_amounts, prizes_remaining, price, odds):
                     val *= 12
 
                 amt = val * time
+
+            elif '(' in amt and ')' in amt:
+                # ex. 1000000(40K/YR/25YRS)
+                amt = amt.split('(')
+                amt = amt[0]
+                amt = pd.to_numeric(amt)
 
             else:
                 logging.info(f'Value Error while transforming prize amounts. {amt}')
