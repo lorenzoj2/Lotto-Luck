@@ -4,8 +4,10 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
-import logging
+import mysql.connector
 import pandas as pd
+import os
+import logging
 
 logging.basicConfig(filename="lotto.log", level=logging.INFO, format="%(asctime)s : %(message)s",
                     datefmt="%m/%d/%Y %I:%M:%S %p")
@@ -46,6 +48,7 @@ def get_ticket_hrefs(driver):
             ticket_hrefs.append(href_value)
 
     except Exception as e:
+        logging.error("Unable to collect ticket URLS.")
         logging.error(e)
 
     finally:
@@ -152,9 +155,57 @@ def get_ticket_df(driver, num_tickets=None):
             data.append(ticket_data.values())
 
         except Exception as e:
+            logging.error("Unable to return ticket DataFrame.")
             logging.error(e)
 
     return pd.DataFrame(data, columns=['name', 'ticket_number', 'price', 'odds', 'prize', 'time'])
+
+
+def get_conn():
+    conn = mysql.connector.connect(
+        host='localhost',
+        user='user',
+        password=os.environ['LOTTO_KEY'],
+        database='lottoluck',
+    )
+
+    return conn
+
+
+def insert_df(df, table_name, ignore=False):
+    """
+    Connects to and inserts a DataFrame into the database.
+
+    Args:
+        df: The DataFrame to insert.
+        table_name: The table to insert into.
+        ignore: Whether to ignore existing records in table when inserting.
+
+    """
+
+    conn = get_conn()
+    cursor = conn.cursor(prepared=True)
+    rows_affected = 0
+
+    query = (f'INSERT {"IGNORE " if ignore else ""} '
+             f'INTO {table_name}({", ".join(df.columns)}) '
+             f'VALUES({", ".join(["? " for _ in df.columns])})')
+
+    for x in df.to_dict(orient='split')['data']:
+        try:
+            # Insert new data
+            cursor.execute(query, x)
+            rows_affected += cursor.rowcount
+        except mysql.connector.Error as err:
+            logging.error(err)
+
+    # Commit data to database
+    conn.commit()
+
+    logging.info(f'{table_name} : {rows_affected} rows successfully updated.')
+
+    cursor.close()
+    conn.close()
 
 
 def main():
@@ -163,8 +214,16 @@ def main():
     driver = webdriver.Chrome()
 
     try:
-        ticket_df = get_ticket_df(driver)
-        ticket_df.to_excel("data.xlsx")
+        df = get_ticket_df(driver)
+
+        ticket_df = df[['ticket_number', 'name', 'price', 'odds', 'pic']].copy()
+        prize_df = df[['ticket_number', 'prize', 'time']].copy()
+
+        # Insert data into ticket table
+        insert_df(ticket_df, 'ticket', ignore=True)
+
+        # Insert data into the prize table
+        insert_df(prize_df, 'prize')
 
     except Exception as e:
         logging.error(e)
