@@ -3,6 +3,8 @@ import time
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from bs4 import BeautifulSoup
 import mysql.connector
 import pandas as pd
@@ -13,12 +15,23 @@ logging.basicConfig(filename="lotto.log", level=logging.INFO, format="%(asctime)
                     datefmt="%m/%d/%Y %I:%M:%S %p")
 
 
-def get_ticket_hrefs(driver):
+def get_driver():
+    chrome_options = Options()
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument(
+        f'user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 11_0_1) AppleWebKit/537.36 (KHTML, like Gecko) '
+        f'Chrome/87.0.4280.88 Safari/537.36')
+    service = Service(executable_path='/usr/bin/chromedriver')
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    return driver
+
+
+def get_ticket_hrefs():
     """
     Gets the href for every ticket.
-
-    Args:
-        driver: Chrome browser
 
     Returns:
         A list of hrefs for every available ticket.
@@ -27,6 +40,7 @@ def get_ticket_hrefs(driver):
     logging.info("Getting ticket URLS...")
 
     # Get web page and wait for data to load
+    driver = get_driver()
     driver.get("https://www.ohiolottery.com/games/scratch-offs")
     time.sleep(2)
 
@@ -52,15 +66,15 @@ def get_ticket_hrefs(driver):
         logging.error(e)
 
     finally:
+        driver.close()
         return ticket_hrefs
 
 
-def get_ticket_info(driver, href):
+def get_ticket_info(href):
     """
       Gets the available data for a scratch off ticket.
 
       Args:
-          driver: Chrome browser
           href: The href of the ticket.
 
       Returns:
@@ -71,6 +85,7 @@ def get_ticket_info(driver, href):
     logging.info(f"Getting ticket information ({href})")
 
     # Get web page and wait for data to load
+    driver = get_driver()
     driver.get(f"https://www.ohiolottery.com{href}")
     time.sleep(2)
 
@@ -127,15 +142,15 @@ def get_ticket_info(driver, href):
         return None
 
     finally:
+        driver.close()
         return ticket_data
 
 
-def get_ticket_df(driver, num_tickets=None):
+def get_ticket_df(num_tickets=None):
     """
     Returns a Dataframe of every ticket's information.
 
     Args:
-        driver: Chrome browser
         num_tickets: Number of tickets to add to the DataFrame.
 
     Returns:
@@ -144,14 +159,14 @@ def get_ticket_df(driver, num_tickets=None):
     """
 
     data = []
-    ticket_hrefs = get_ticket_hrefs(driver)
+    ticket_hrefs = get_ticket_hrefs()
 
     for i, href in enumerate(ticket_hrefs):
         if num_tickets and i >= num_tickets:
             break
 
         try:
-            ticket_data = get_ticket_info(driver, href)
+            ticket_data = get_ticket_info(href)
             data.append(ticket_data.values())
 
         except Exception as e:
@@ -211,10 +226,8 @@ def insert_df(df, table_name, ignore=False):
 def main():
     logging.info("Started scraping...")
 
-    driver = webdriver.Chrome()
-
     try:
-        df = get_ticket_df(driver)
+        df = get_ticket_df()
 
         ticket_df = df[['ticket_number', 'name', 'price', 'odds', 'pic']].copy()
         prize_df = df[['ticket_number', 'prize', 'time']].copy()
@@ -227,9 +240,6 @@ def main():
 
     except Exception as e:
         logging.error(e)
-
-    finally:
-        driver.quit()
 
     logging.info("Finished scraping.")
 
